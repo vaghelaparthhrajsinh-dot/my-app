@@ -1,0 +1,6 @@
+{
+  "name": "AD OCCASION",
+  "description": "Event display, rental, inventory, bookings, calendar, financial, and multi-device operations management system for AD OCCASION.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

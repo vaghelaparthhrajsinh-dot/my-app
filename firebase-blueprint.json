@@ -1,0 +1,269 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Authorized application user profile and role-based access control assignment.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "maxLength": 200 },
+        "displayName": { "type": "string", "maxLength": 120 },
+        "role": { "type": "string", "enum": ["owner", "admin", "user", "pending"], "maxLength": 20 },
+        "status": { "type": "string", "enum": ["active", "revoked"], "maxLength": 20 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "displayName", "role", "status", "createdAt", "updatedAt"]
+    },
+    "Invite": {
+      "title": "Invite",
+      "description": "Pre-authorized user invitation mapped by sanitized email key.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email", "maxLength": 200 },
+        "displayName": { "type": "string", "maxLength": 120 },
+        "role": { "type": "string", "enum": ["owner", "admin", "user"], "maxLength": 20 },
+        "invitedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "role", "invitedBy", "createdAt", "updatedAt"]
+    },
+    "BusinessSettings": {
+      "title": "BusinessSettings",
+      "description": "Global AD OCCASION settings, role permissions, and service capacities.",
+      "type": "object",
+      "properties": {
+        "businessName": { "type": "string", "maxLength": 80 },
+        "currencySymbol": { "type": "string", "maxLength": 8 },
+        "adminPermissions": { "type": "object" },
+        "userPermissions": { "type": "object" },
+        "defaultCapacities": { "type": "object" },
+        "lastBackupAt": { "type": "string", "maxLength": 64 },
+        "updatedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["businessName", "currencySymbol", "adminPermissions", "userPermissions", "defaultCapacities", "createdAt", "updatedAt"]
+    },
+    "CategoryConfig": {
+      "title": "CategoryConfig",
+      "description": "Configuration for each of the eight core AD OCCASION business categories.",
+      "type": "object",
+      "properties": {
+        "key": { "type": "string", "enum": ["DISPLAY", "ARTICLE", "CROCKERY", "MOCKTAIL", "WAITER", "PAN", "GIRLS", "JUICE"], "maxLength": 32 },
+        "label": { "type": "string", "maxLength": 64 },
+        "unitLabel": { "type": "string", "maxLength": 32 },
+        "dailyCapacity": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 500 },
+        "updatedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["key", "label", "unitLabel", "dailyCapacity", "createdAt", "updatedAt"]
+    },
+    "InventoryItem": {
+      "title": "InventoryItem",
+      "description": "Inventory item or variety belonging to an AD OCCASION business category.",
+      "type": "object",
+      "properties": {
+        "category": { "type": "string", "enum": ["DISPLAY", "ARTICLE", "CROCKERY", "MOCKTAIL", "WAITER", "PAN", "GIRLS", "JUICE"], "maxLength": 32 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "totalUnits": { "type": "number" },
+        "damagedUnits": { "type": "number" },
+        "missingUnits": { "type": "number" },
+        "rentalPrice": { "type": "number" },
+        "purchaseCost": { "type": "number" },
+        "description": { "type": "string", "maxLength": 500 },
+        "imageUrl": { "type": "string", "maxLength": 500 },
+        "notes": { "type": "string", "maxLength": 500 },
+        "archived": { "type": "boolean" },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "updatedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["category", "name", "totalUnits", "damagedUnits", "missingUnits", "archived", "createdBy", "createdAt", "updatedAt"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Customer directory record with optional contact details.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "address": { "type": "string", "maxLength": 300 },
+        "notes": { "type": "string", "maxLength": 600 },
+        "archived": { "type": "boolean" },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "updatedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "archived", "createdBy", "createdAt", "updatedAt"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "Confirmed booking or reservation for an event date and category.",
+      "type": "object",
+      "properties": {
+        "bookingCode": { "type": "string", "maxLength": 32 },
+        "eventGroupId": { "type": "string", "maxLength": 64 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "eventDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "maxLength": 10 },
+        "category": { "type": "string", "enum": ["DISPLAY", "ARTICLE", "CROCKERY", "MOCKTAIL", "WAITER", "PAN", "GIRLS", "JUICE"], "maxLength": 32 },
+        "itemId": { "type": "string", "maxLength": 128 },
+        "itemName": { "type": "string", "maxLength": 140 },
+        "items": { "type": "array" },
+        "quantity": { "type": "number" },
+        "venue": { "type": "string", "maxLength": 200 },
+        "totalAmount": { "type": "number" },
+        "advanceReceived": { "type": "number" },
+        "advancePaid": { "type": "number" },
+        "status": { "type": "string", "enum": ["confirmed", "reserved", "cancelled", "completed", "archived"], "maxLength": 24 },
+        "dispatchStatus": { "type": "string", "enum": ["pending", "outgoing", "returned"], "maxLength": 24 },
+        "outgoingUnits": { "type": "number" },
+        "returnedUnits": { "type": "number" },
+        "damagedUnits": { "type": "number" },
+        "missingUnits": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 800 },
+        "negotiationId": { "type": "string", "maxLength": 128 },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "updatedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["bookingCode", "customerName", "eventDate", "category", "quantity", "status", "dispatchStatus", "createdBy", "createdAt", "updatedAt"]
+    },
+    "Advance": {
+      "title": "Advance",
+      "description": "Advance received from customers or advance paid to vendors/parties.",
+      "type": "object",
+      "properties": {
+        "direction": { "type": "string", "enum": ["received", "paid"], "maxLength": 16 },
+        "partyName": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "bookingId": { "type": "string", "maxLength": 128 },
+        "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "maxLength": 10 },
+        "amount": { "type": "number" },
+        "paymentMethod": { "type": "string", "maxLength": 48 },
+        "notes": { "type": "string", "maxLength": 500 },
+        "archived": { "type": "boolean" },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "updatedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["direction", "partyName", "date", "amount", "archived", "createdBy", "createdAt", "updatedAt"]
+    },
+    "Negotiation": {
+      "title": "Negotiation",
+      "description": "Customer price negotiation log across any business category.",
+      "type": "object",
+      "properties": {
+        "customerId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "negotiationDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "maxLength": 10 },
+        "eventDate": { "type": "string", "maxLength": 10 },
+        "category": { "type": "string", "enum": ["DISPLAY", "ARTICLE", "CROCKERY", "MOCKTAIL", "WAITER", "PAN", "GIRLS", "JUICE"], "maxLength": 32 },
+        "itemId": { "type": "string", "maxLength": 128 },
+        "itemName": { "type": "string", "maxLength": 140 },
+        "units": { "type": "number" },
+        "originalPrice": { "type": "number" },
+        "customerOffer": { "type": "number" },
+        "finalPrice": { "type": "number" },
+        "advanceReceived": { "type": "number" },
+        "status": { "type": "string", "enum": ["open", "converted", "cancelled"], "maxLength": 24 },
+        "convertedBookingId": { "type": "string", "maxLength": 128 },
+        "notes": { "type": "string", "maxLength": 600 },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "updatedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["customerName", "negotiationDate", "category", "units", "finalPrice", "status", "createdBy", "createdAt", "updatedAt"]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "Operating or event-related expense entry for profit and loss tracking.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "expenseCategory": { "type": "string", "maxLength": 64 },
+        "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "maxLength": 10 },
+        "amount": { "type": "number" },
+        "vendor": { "type": "string", "maxLength": 140 },
+        "bookingId": { "type": "string", "maxLength": 128 },
+        "notes": { "type": "string", "maxLength": 500 },
+        "archived": { "type": "boolean" },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "updatedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "expenseCategory", "date", "amount", "archived", "createdBy", "createdAt", "updatedAt"]
+    },
+    "AuditEntry": {
+      "title": "AuditEntry",
+      "description": "Immutable operational audit log record.",
+      "type": "object",
+      "properties": {
+        "entityType": { "type": "string", "maxLength": 40 },
+        "entityId": { "type": "string", "maxLength": 128 },
+        "action": { "type": "string", "maxLength": 40 },
+        "summary": { "type": "string", "maxLength": 300 },
+        "performedBy": { "type": "string", "maxLength": 128 },
+        "performedByEmail": { "type": "string", "maxLength": 200 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["entityType", "entityId", "action", "summary", "performedBy", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Authorized user accounts and roles."
+    },
+    "/invites/{inviteId}": {
+      "schema": { "$ref": "#/entities/Invite" },
+      "description": "Pre-authorized user invitations."
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/BusinessSettings" },
+      "description": "Global AD OCCASION configuration and role permissions."
+    },
+    "/categories/{categoryId}": {
+      "schema": { "$ref": "#/entities/CategoryConfig" },
+      "description": "Metadata and capacity configuration for the eight business categories."
+    },
+    "/inventory/{itemId}": {
+      "schema": { "$ref": "#/entities/InventoryItem" },
+      "description": "Business inventory items across all categories."
+    },
+    "/customers/{customerId}": {
+      "schema": { "$ref": "#/entities/Customer" },
+      "description": "Customer directory records."
+    },
+    "/bookings/{bookingId}": {
+      "schema": { "$ref": "#/entities/Booking" },
+      "description": "Event bookings and reservations."
+    },
+    "/advances/{advanceId}": {
+      "schema": { "$ref": "#/entities/Advance" },
+      "description": "Advance received and advance paid ledger."
+    },
+    "/negotiations/{negotiationId}": {
+      "schema": { "$ref": "#/entities/Negotiation" },
+      "description": "Price negotiation logs."
+    },
+    "/expenses/{expenseId}": {
+      "schema": { "$ref": "#/entities/Expense" },
+      "description": "Business expense records."
+    },
+    "/auditHistory/{auditId}": {
+      "schema": { "$ref": "#/entities/AuditEntry" },
+      "description": "Operational audit trail."
+    }
+  }
+}

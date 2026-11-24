@@ -1,0 +1,529 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Primitive & Identity Helpers
+    // -------------------------------------------------------------------------
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedEmail() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidOptStr(val, maxLen) {
+      return val == null || (val is string && val.size() <= maxLen);
+    }
+
+    function isValidDateStr(val) {
+      return val is string && val.size() == 10 && val.matches('^\\d{4}-\\d{2}-\\d{2}$');
+    }
+
+    function isValidOptDateStr(val) {
+      return val == null || (val is string && (val.size() == 0 || (val.size() == 10 && val.matches('^\\d{4}-\\d{2}-\\d{2}$'))));
+    }
+
+    function isBootstrappedOwner() {
+      return isVerifiedEmail() && request.auth.token.email.lower() == 'parthhrajsinhvaghela@gmail.com';
+    }
+
+    function userExists() {
+      return isVerifiedEmail() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function currentUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isOwner() {
+      return isBootstrappedOwner() || (
+        userExists() &&
+        currentUserData().status == 'active' &&
+        currentUserData().role == 'owner'
+      );
+    }
+
+    function isAdmin() {
+      return isOwner() || (
+        userExists() &&
+        currentUserData().status == 'active' &&
+        currentUserData().role == 'admin'
+      );
+    }
+
+    function isActiveUser() {
+      return isOwner() || (
+        userExists() &&
+        currentUserData().status == 'active' &&
+        currentUserData().role in ['owner', 'admin', 'user']
+      );
+    }
+
+    function settingsExist() {
+      return exists(/databases/$(database)/documents/settings/business);
+    }
+
+    function businessSettings() {
+      return get(/databases/$(database)/documents/settings/business).data;
+    }
+
+    function canManageUsers() {
+      return isOwner() || (
+        isAdmin() &&
+        settingsExist() &&
+        businessSettings().adminPermissions.canManageUsers == true
+      );
+    }
+
+    function canViewFinancials() {
+      return isOwner() || (
+        isAdmin() &&
+        (!settingsExist() || businessSettings().adminPermissions.canViewFinancials == true)
+      );
+    }
+
+    function canDeleteRecords() {
+      return isOwner() || (
+        isAdmin() &&
+        settingsExist() &&
+        businessSettings().adminPermissions.canDeleteRecords == true
+      );
+    }
+
+    function safeEmailKey(email) {
+      return email.lower().replace('[^a-z0-9_\\-]', '_');
+    }
+
+    function isValidCategory(cat) {
+      return cat in ['DISPLAY', 'ARTICLE', 'CROCKERY', 'MOCKTAIL', 'WAITER', 'PAN', 'GIRLS', 'JUICE'];
+    }
+
+    // -------------------------------------------------------------------------
+    // Entity Validation Blueprints
+    // -------------------------------------------------------------------------
+    function isValidUserDoc(data) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'role', 'status', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'displayName', 'role', 'status', 'createdAt', 'updatedAt']) &&
+        isValidId(data.uid) &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 200 &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120 &&
+        data.role in ['owner', 'admin', 'user', 'pending'] &&
+        data.status in ['active', 'revoked'] &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidInviteDoc(data) {
+      return data.keys().hasAll(['email', 'displayName', 'role', 'invitedBy', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['email', 'displayName', 'role', 'invitedBy', 'createdAt', 'updatedAt']) &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 200 &&
+        isValidOptStr(data.displayName, 120) &&
+        data.role in ['owner', 'admin', 'user'] &&
+        isValidId(data.invitedBy) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidSettingsDoc(data) {
+      return data.keys().hasAll(['businessName', 'currencySymbol', 'adminPermissions', 'userPermissions', 'defaultCapacities', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['businessName', 'currencySymbol', 'adminPermissions', 'userPermissions', 'defaultCapacities', 'lastBackupAt', 'updatedBy', 'createdAt', 'updatedAt']) &&
+        data.businessName is string && data.businessName.size() >= 1 && data.businessName.size() <= 80 &&
+        data.currencySymbol is string && data.currencySymbol.size() >= 1 && data.currencySymbol.size() <= 8 &&
+        data.adminPermissions is map &&
+        data.adminPermissions.keys().hasAll(['canViewFinancials', 'canManageUsers', 'canBackupRestore', 'canDeleteRecords', 'canEditPrices']) &&
+        data.adminPermissions.keys().hasOnly(['canViewFinancials', 'canManageUsers', 'canBackupRestore', 'canDeleteRecords', 'canEditPrices']) &&
+        data.adminPermissions.canViewFinancials is bool &&
+        data.adminPermissions.canManageUsers is bool &&
+        data.adminPermissions.canBackupRestore is bool &&
+        data.adminPermissions.canDeleteRecords is bool &&
+        data.adminPermissions.canEditPrices is bool &&
+        data.userPermissions is map &&
+        data.userPermissions.keys().hasAll(['canExportReports']) &&
+        data.userPermissions.keys().hasOnly(['canExportReports']) &&
+        data.userPermissions.canExportReports is bool &&
+        data.defaultCapacities is map &&
+        data.defaultCapacities.keys().hasAll(['WAITER', 'GIRLS']) &&
+        data.defaultCapacities.keys().hasOnly(['WAITER', 'GIRLS']) &&
+        data.defaultCapacities.WAITER is number && data.defaultCapacities.WAITER >= 0 &&
+        data.defaultCapacities.GIRLS is number && data.defaultCapacities.GIRLS >= 0 &&
+        (!('lastBackupAt' in data) || isValidOptStr(data.lastBackupAt, 64)) &&
+        (!('updatedBy' in data) || isValidOptStr(data.updatedBy, 128)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidCategoryDoc(data) {
+      return data.keys().hasAll(['key', 'label', 'unitLabel', 'dailyCapacity', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['key', 'label', 'unitLabel', 'dailyCapacity', 'notes', 'updatedBy', 'createdAt', 'updatedAt']) &&
+        isValidCategory(data.key) &&
+        data.label is string && data.label.size() >= 1 && data.label.size() <= 64 &&
+        data.unitLabel is string && data.unitLabel.size() >= 1 && data.unitLabel.size() <= 32 &&
+        data.dailyCapacity is number && data.dailyCapacity >= 0 &&
+        (!('notes' in data) || isValidOptStr(data.notes, 500)) &&
+        (!('updatedBy' in data) || isValidOptStr(data.updatedBy, 128)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidInventoryDoc(data) {
+      return data.keys().hasAll(['category', 'name', 'totalUnits', 'damagedUnits', 'missingUnits', 'archived', 'createdBy', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['category', 'name', 'totalUnits', 'damagedUnits', 'missingUnits', 'rentalPrice', 'purchaseCost', 'description', 'imageUrl', 'notes', 'archived', 'createdBy', 'updatedBy', 'createdAt', 'updatedAt']) &&
+        isValidCategory(data.category) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+        data.totalUnits is number && data.totalUnits >= 0 &&
+        data.damagedUnits is number && data.damagedUnits >= 0 &&
+        data.missingUnits is number && data.missingUnits >= 0 &&
+        (!('rentalPrice' in data) || (data.rentalPrice == null || (data.rentalPrice is number && data.rentalPrice >= 0))) &&
+        (!('purchaseCost' in data) || (data.purchaseCost == null || (data.purchaseCost is number && data.purchaseCost >= 0))) &&
+        (!('description' in data) || isValidOptStr(data.description, 500)) &&
+        (!('imageUrl' in data) || isValidOptStr(data.imageUrl, 500)) &&
+        (!('notes' in data) || isValidOptStr(data.notes, 500)) &&
+        data.archived is bool &&
+        isValidId(data.createdBy) &&
+        (!('updatedBy' in data) || isValidOptStr(data.updatedBy, 128)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidCustomerDoc(data) {
+      return data.keys().hasAll(['name', 'archived', 'createdBy', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['name', 'phone', 'address', 'notes', 'archived', 'createdBy', 'updatedBy', 'createdAt', 'updatedAt']) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 140 &&
+        (!('phone' in data) || isValidOptStr(data.phone, 40)) &&
+        (!('address' in data) || isValidOptStr(data.address, 300)) &&
+        (!('notes' in data) || isValidOptStr(data.notes, 600)) &&
+        data.archived is bool &&
+        isValidId(data.createdBy) &&
+        (!('updatedBy' in data) || isValidOptStr(data.updatedBy, 128)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidBookingDoc(data) {
+      return data.keys().hasAll(['bookingCode', 'customerName', 'eventDate', 'category', 'quantity', 'status', 'dispatchStatus', 'createdBy', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['bookingCode', 'eventGroupId', 'customerId', 'customerName', 'eventDate', 'category', 'itemId', 'itemName', 'items', 'quantity', 'venue', 'totalAmount', 'advanceReceived', 'advancePaid', 'status', 'dispatchStatus', 'outgoingUnits', 'returnedUnits', 'damagedUnits', 'missingUnits', 'notes', 'negotiationId', 'createdBy', 'updatedBy', 'createdAt', 'updatedAt']) &&
+        data.bookingCode is string && data.bookingCode.size() >= 1 && data.bookingCode.size() <= 32 &&
+        (!('eventGroupId' in data) || isValidOptStr(data.eventGroupId, 64)) &&
+        (!('customerId' in data) || isValidOptStr(data.customerId, 128)) &&
+        data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 140 &&
+        isValidDateStr(data.eventDate) &&
+        isValidCategory(data.category) &&
+        (!('itemId' in data) || isValidOptStr(data.itemId, 128)) &&
+        (!('itemName' in data) || isValidOptStr(data.itemName, 140)) &&
+        (!('items' in data) || (data.items == null || (data.items is list && data.items.size() <= 25 && (data.items.size() == 0 || data.items[0] is map)))) &&
+        data.quantity is number && data.quantity >= 0 &&
+        (!('venue' in data) || isValidOptStr(data.venue, 200)) &&
+        (!('totalAmount' in data) || (data.totalAmount == null || (data.totalAmount is number && data.totalAmount >= 0))) &&
+        (!('advanceReceived' in data) || (data.advanceReceived == null || (data.advanceReceived is number && data.advanceReceived >= 0))) &&
+        (!('advancePaid' in data) || (data.advancePaid == null || (data.advancePaid is number && data.advancePaid >= 0))) &&
+        data.status in ['confirmed', 'reserved', 'cancelled', 'completed', 'archived'] &&
+        data.dispatchStatus in ['pending', 'outgoing', 'returned'] &&
+        (!('outgoingUnits' in data) || (data.outgoingUnits == null || (data.outgoingUnits is number && data.outgoingUnits >= 0))) &&
+        (!('returnedUnits' in data) || (data.returnedUnits == null || (data.returnedUnits is number && data.returnedUnits >= 0))) &&
+        (!('damagedUnits' in data) || (data.damagedUnits == null || (data.damagedUnits is number && data.damagedUnits >= 0))) &&
+        (!('missingUnits' in data) || (data.missingUnits == null || (data.missingUnits is number && data.missingUnits >= 0))) &&
+        (!('notes' in data) || isValidOptStr(data.notes, 800)) &&
+        (!('negotiationId' in data) || isValidOptStr(data.negotiationId, 128)) &&
+        isValidId(data.createdBy) &&
+        (!('updatedBy' in data) || isValidOptStr(data.updatedBy, 128)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAdvanceDoc(data) {
+      return data.keys().hasAll(['direction', 'partyName', 'date', 'amount', 'archived', 'createdBy', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['direction', 'partyName', 'customerId', 'bookingId', 'date', 'amount', 'paymentMethod', 'notes', 'archived', 'createdBy', 'updatedBy', 'createdAt', 'updatedAt']) &&
+        data.direction in ['received', 'paid'] &&
+        data.partyName is string && data.partyName.size() >= 1 && data.partyName.size() <= 140 &&
+        (!('customerId' in data) || isValidOptStr(data.customerId, 128)) &&
+        (!('bookingId' in data) || isValidOptStr(data.bookingId, 128)) &&
+        isValidDateStr(data.date) &&
+        data.amount is number && data.amount >= 0 &&
+        (!('paymentMethod' in data) || isValidOptStr(data.paymentMethod, 48)) &&
+        (!('notes' in data) || isValidOptStr(data.notes, 500)) &&
+        data.archived is bool &&
+        isValidId(data.createdBy) &&
+        (!('updatedBy' in data) || isValidOptStr(data.updatedBy, 128)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidNegotiationDoc(data) {
+      return data.keys().hasAll(['customerName', 'negotiationDate', 'category', 'units', 'finalPrice', 'status', 'createdBy', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['customerId', 'customerName', 'negotiationDate', 'eventDate', 'category', 'itemId', 'itemName', 'units', 'originalPrice', 'customerOffer', 'finalPrice', 'advanceReceived', 'status', 'convertedBookingId', 'notes', 'createdBy', 'updatedBy', 'createdAt', 'updatedAt']) &&
+        (!('customerId' in data) || isValidOptStr(data.customerId, 128)) &&
+        data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 140 &&
+        isValidDateStr(data.negotiationDate) &&
+        (!('eventDate' in data) || isValidOptDateStr(data.eventDate)) &&
+        isValidCategory(data.category) &&
+        (!('itemId' in data) || isValidOptStr(data.itemId, 128)) &&
+        (!('itemName' in data) || isValidOptStr(data.itemName, 140)) &&
+        data.units is number && data.units >= 0 &&
+        (!('originalPrice' in data) || (data.originalPrice == null || (data.originalPrice is number && data.originalPrice >= 0))) &&
+        (!('customerOffer' in data) || (data.customerOffer == null || (data.customerOffer is number && data.customerOffer >= 0))) &&
+        data.finalPrice is number && data.finalPrice >= 0 &&
+        (!('advanceReceived' in data) || (data.advanceReceived == null || (data.advanceReceived is number && data.advanceReceived >= 0))) &&
+        data.status in ['open', 'converted', 'cancelled'] &&
+        (!('convertedBookingId' in data) || isValidOptStr(data.convertedBookingId, 128)) &&
+        (!('notes' in data) || isValidOptStr(data.notes, 600)) &&
+        isValidId(data.createdBy) &&
+        (!('updatedBy' in data) || isValidOptStr(data.updatedBy, 128)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidExpenseDoc(data) {
+      return data.keys().hasAll(['title', 'expenseCategory', 'date', 'amount', 'archived', 'createdBy', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['title', 'expenseCategory', 'date', 'amount', 'vendor', 'bookingId', 'notes', 'archived', 'createdBy', 'updatedBy', 'createdAt', 'updatedAt']) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 140 &&
+        data.expenseCategory is string && data.expenseCategory.size() >= 1 && data.expenseCategory.size() <= 64 &&
+        isValidDateStr(data.date) &&
+        data.amount is number && data.amount >= 0 &&
+        (!('vendor' in data) || isValidOptStr(data.vendor, 140)) &&
+        (!('bookingId' in data) || isValidOptStr(data.bookingId, 128)) &&
+        (!('notes' in data) || isValidOptStr(data.notes, 500)) &&
+        data.archived is bool &&
+        isValidId(data.createdBy) &&
+        (!('updatedBy' in data) || isValidOptStr(data.updatedBy, 128)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAuditDoc(data) {
+      return data.keys().hasAll(['entityType', 'entityId', 'action', 'summary', 'performedBy', 'createdAt']) &&
+        data.keys().hasOnly(['entityType', 'entityId', 'action', 'summary', 'performedBy', 'performedByEmail', 'createdAt']) &&
+        data.entityType is string && data.entityType.size() >= 1 && data.entityType.size() <= 40 &&
+        data.entityId is string && data.entityId.size() >= 1 && data.entityId.size() <= 128 &&
+        data.action is string && data.action.size() >= 1 && data.action.size() <= 40 &&
+        data.summary is string && data.summary.size() >= 1 && data.summary.size() <= 300 &&
+        isValidId(data.performedBy) &&
+        (!('performedByEmail' in data) || isValidOptStr(data.performedByEmail, 200)) &&
+        data.createdAt is timestamp;
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection Rules
+    // -------------------------------------------------------------------------
+
+    // 0. Connection Probe
+    match /test/{docId} {
+      allow get: if isValidId(docId) && isSignedIn();
+    }
+
+    // 1. Users (PII Protected)
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isVerifiedEmail() && (
+        request.auth.uid == userId || isOwner() || canManageUsers()
+      );
+      allow list: if isVerifiedEmail() && (
+        resource.data.uid == request.auth.uid || isOwner() || canManageUsers()
+      );
+      allow create: if isValidId(userId) && isVerifiedEmail() && isValidUserDoc(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time && (
+          canManageUsers() ||
+          (request.auth.uid == userId && isBootstrappedOwner() && incoming().uid == request.auth.uid && incoming().role == 'owner' && incoming().status == 'active') ||
+          (request.auth.uid == userId &&
+            incoming().uid == request.auth.uid &&
+            incoming().email == request.auth.token.email &&
+            incoming().status == 'active' &&
+            exists(/databases/$(database)/documents/invites/$(safeEmailKey(request.auth.token.email))) &&
+            incoming().role == get(/databases/$(database)/documents/invites/$(safeEmailKey(request.auth.token.email))).data.role
+          ) ||
+          (request.auth.uid == userId &&
+            incoming().uid == request.auth.uid &&
+            incoming().email == request.auth.token.email &&
+            incoming().role == 'pending' &&
+            incoming().status == 'active'
+          )
+        );
+      allow update: if isValidId(userId) && isVerifiedEmail() && isValidUserDoc(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          (isOwner() && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'role', 'status', 'updatedAt'])) ||
+          (canManageUsers() && existing().role != 'owner' && incoming().role != 'owner' && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'role', 'status', 'updatedAt'])) ||
+          (request.auth.uid == userId && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'updatedAt']))
+        );
+      allow delete: if isValidId(userId) && isOwner() && userId != request.auth.uid;
+    }
+
+    // 2. Invites
+    match /invites/{inviteId} {
+      allow get: if isValidId(inviteId) && isVerifiedEmail() && (
+        canManageUsers() || inviteId == safeEmailKey(request.auth.token.email)
+      );
+      allow list: if isVerifiedEmail() && (
+        resource.data.email == request.auth.token.email || canManageUsers()
+      );
+      allow create: if isValidId(inviteId) && canManageUsers() && isValidInviteDoc(incoming()) &&
+        (isOwner() || incoming().role != 'owner') &&
+        incoming().invitedBy == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(inviteId) && canManageUsers() && isValidInviteDoc(incoming()) &&
+        (isOwner() || incoming().role != 'owner') &&
+        incoming().invitedBy == existing().invitedBy &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'role', 'updatedAt']);
+      allow delete: if isValidId(inviteId) && canManageUsers();
+    }
+
+    // 3. Settings
+    match /settings/{settingId} {
+      allow get: if isValidId(settingId) && isActiveUser();
+      allow list: if isActiveUser();
+      allow create: if isValidId(settingId) && isOwner() && isValidSettingsDoc(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(settingId) && isOwner() && isValidSettingsDoc(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['businessName', 'currencySymbol', 'adminPermissions', 'userPermissions', 'defaultCapacities', 'lastBackupAt', 'updatedBy', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    // 4. Categories
+    match /categories/{categoryId} {
+      allow get: if isValidId(categoryId) && isActiveUser();
+      allow list: if isActiveUser();
+      allow create: if isValidId(categoryId) && isAdmin() && isValidCategoryDoc(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(categoryId) && isAdmin() && isValidCategoryDoc(incoming()) &&
+        incoming().key == existing().key &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['label', 'unitLabel', 'dailyCapacity', 'notes', 'updatedBy', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    // 5. Inventory
+    match /inventory/{itemId} {
+      allow get: if isValidId(itemId) && isActiveUser();
+      allow list: if isActiveUser();
+      allow create: if isValidId(itemId) && isAdmin() && isValidInventoryDoc(incoming()) &&
+        incoming().createdBy == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(itemId) && isAdmin() && isValidInventoryDoc(incoming()) &&
+        incoming().createdBy == existing().createdBy &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['category', 'name', 'totalUnits', 'damagedUnits', 'missingUnits', 'rentalPrice', 'purchaseCost', 'description', 'imageUrl', 'notes', 'archived', 'updatedBy', 'updatedAt']);
+      allow delete: if isValidId(itemId) && canDeleteRecords();
+    }
+
+    // 6. Customers
+    match /customers/{customerId} {
+      allow get: if isValidId(customerId) && isActiveUser();
+      allow list: if isActiveUser();
+      allow create: if isValidId(customerId) && isAdmin() && isValidCustomerDoc(incoming()) &&
+        incoming().createdBy == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(customerId) && isAdmin() && isValidCustomerDoc(incoming()) &&
+        incoming().createdBy == existing().createdBy &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'address', 'notes', 'archived', 'updatedBy', 'updatedAt']);
+      allow delete: if isValidId(customerId) && canDeleteRecords();
+    }
+
+    // 7. Bookings
+    match /bookings/{bookingId} {
+      allow get: if isValidId(bookingId) && isActiveUser();
+      allow list: if isActiveUser();
+      allow create: if isValidId(bookingId) && isAdmin() && isValidBookingDoc(incoming()) &&
+        incoming().createdBy == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(bookingId) && isAdmin() && isValidBookingDoc(incoming()) &&
+        incoming().createdBy == existing().createdBy &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (isOwner() || existing().status != 'archived') &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['eventGroupId', 'customerId', 'customerName', 'eventDate', 'category', 'itemId', 'itemName', 'items', 'quantity', 'venue', 'totalAmount', 'advanceReceived', 'advancePaid', 'status', 'dispatchStatus', 'outgoingUnits', 'returnedUnits', 'damagedUnits', 'missingUnits', 'notes', 'negotiationId', 'updatedBy', 'updatedAt']);
+      allow delete: if isValidId(bookingId) && canDeleteRecords();
+    }
+
+    // 8. Advances
+    match /advances/{advanceId} {
+      allow get: if isValidId(advanceId) && isActiveUser();
+      allow list: if isActiveUser();
+      allow create: if isValidId(advanceId) && isAdmin() && isValidAdvanceDoc(incoming()) &&
+        incoming().createdBy == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(advanceId) && isAdmin() && isValidAdvanceDoc(incoming()) &&
+        incoming().createdBy == existing().createdBy &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['direction', 'partyName', 'customerId', 'bookingId', 'date', 'amount', 'paymentMethod', 'notes', 'archived', 'updatedBy', 'updatedAt']);
+      allow delete: if isValidId(advanceId) && canDeleteRecords();
+    }
+
+    // 9. Negotiations
+    match /negotiations/{negotiationId} {
+      allow get: if isValidId(negotiationId) && isActiveUser();
+      allow list: if isActiveUser();
+      allow create: if isValidId(negotiationId) && isAdmin() && isValidNegotiationDoc(incoming()) &&
+        incoming().createdBy == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(negotiationId) && isAdmin() && isValidNegotiationDoc(incoming()) &&
+        incoming().createdBy == existing().createdBy &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['customerId', 'customerName', 'negotiationDate', 'eventDate', 'category', 'itemId', 'itemName', 'units', 'originalPrice', 'customerOffer', 'finalPrice', 'advanceReceived', 'status', 'convertedBookingId', 'notes', 'updatedBy', 'updatedAt']);
+      allow delete: if isValidId(negotiationId) && canDeleteRecords();
+    }
+
+    // 10. Expenses (Financial Access Enforced)
+    match /expenses/{expenseId} {
+      allow get: if isValidId(expenseId) && canViewFinancials();
+      allow list: if canViewFinancials();
+      allow create: if isValidId(expenseId) && canViewFinancials() && isValidExpenseDoc(incoming()) &&
+        incoming().createdBy == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(expenseId) && canViewFinancials() && isValidExpenseDoc(incoming()) &&
+        incoming().createdBy == existing().createdBy &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['title', 'expenseCategory', 'date', 'amount', 'vendor', 'bookingId', 'notes', 'archived', 'updatedBy', 'updatedAt']);
+      allow delete: if isValidId(expenseId) && canDeleteRecords();
+    }
+
+    // 11. Audit History (Append-Only)
+    match /auditHistory/{auditId} {
+      allow get: if isValidId(auditId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidId(auditId) && isAdmin() && isValidAuditDoc(incoming()) &&
+        incoming().performedBy == request.auth.uid &&
+        incoming().createdAt == request.time;
+      allow update, delete: if false;
+    }
+  }
+}
